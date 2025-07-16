@@ -62,54 +62,56 @@ def extract_date_from_sheet(client_ws):
     return date_value
 
 def copy_tab1_format_with_client_data(source_wb, tab1_ws, client_ws, new_tab_name):
-    """Create a new tab, write client data first, then apply tab1 formats over it"""
-    # Create a new blank worksheet
-    new_ws = source_wb.create_sheet(title=new_tab_name)
+    """Create a new tab by duplicating tab1 (including all formats) and overwriting with client data"""
+    # Duplicate the tab1 sheet to copy all formats, including conditional formatting, data validation, etc.
+    new_ws = source_wb.copy_worksheet(tab1_ws)
+    new_ws.title = new_tab_name
     
-    # First, copy client data (values only) into the new sheet
-    # Determine the data range from client
-    max_row = client_ws.max_row
-    max_col = client_ws.max_column
+    # Optionally clear existing values in the new sheet (if tab1 has placeholder data)
+    # Uncomment if needed:
+    # for row in new_ws.iter_rows():
+    #     for cell in row:
+    #         cell.value = None
+    
+    # Now overwrite with client data (values only, preserving template formats)
+    # Determine the max row/col from client to ensure we cover the full data range
+    max_row = max(client_ws.max_row, tab1_ws.max_row)
+    max_col = max(client_ws.max_column, tab1_ws.max_column)
     
     for row_idx in range(1, max_row + 1):
         for col_idx in range(1, max_col + 1):
             client_cell = client_ws.cell(row=row_idx, column=col_idx)
-            target_cell = new_ws.cell(row=row_idx, column=col_idx)
-            target_cell.value = client_cell.value  # Set value; no styles yet
+            if client_cell.value is not None:  # Only overwrite non-empty cells
+                target_cell = new_ws.cell(row=row_idx, column=col_idx)
+                target_cell.value = client_cell.value
+                # Do not copy any styles from client_cell; keep template's styles intact
     
-    # Now, apply formats from tab1 over the data range (mimicking Format Painter)
-    # Extend to tab1's max if larger
-    max_row = max(max_row, tab1_ws.max_row)
-    max_col = max(max_col, tab1_ws.max_column)
+    # If client data extends beyond template, apply basic template column/row dimensions to new areas
+    for col in range(1, max_col + 1):
+        col_letter = get_column_letter(col)
+        if col_letter in tab1_ws.column_dimensions:
+            new_ws.column_dimensions[col_letter].width = tab1_ws.column_dimensions[col_letter].width
     
+    for row in range(1, max_row + 1):
+        if row in tab1_ws.row_dimensions:
+            new_ws.row_dimensions[row].height = tab1_ws.row_dimensions[row].height
+    
+    # Format painter: Reapply tab1 format to column A (including font name/size and all formatting)
+    print(f"        Applying format painter to column A...")
     for row_idx in range(1, max_row + 1):
-        for col_idx in range(1, max_col + 1):
-            source_cell = tab1_ws.cell(row=row_idx, column=col_idx)
-            target_cell = new_ws.cell(row=row_idx, column=col_idx)
-            
-            # Copy formatting if source has it
-            if source_cell.has_style:
-                target_cell.font = copy(source_cell.font)
-                target_cell.border = copy(source_cell.border)
-                target_cell.fill = copy(source_cell.fill)
-                target_cell.number_format = source_cell.number_format
-                target_cell.protection = copy(source_cell.protection)
-                target_cell.alignment = copy(source_cell.alignment)
-    
-    # Copy column dimensions from tab1
-    for col in tab1_ws.column_dimensions:
-        new_ws.column_dimensions[col].width = tab1_ws.column_dimensions[col].width
-    
-    # Copy row dimensions from tab1
-    for row in tab1_ws.row_dimensions:
-        new_ws.row_dimensions[row].height = tab1_ws.row_dimensions[row].height
-    
-    # Copy merged cells from tab1
-    for merged_cell_range in tab1_ws.merged_cells.ranges:
-        new_ws.merge_cells(str(merged_cell_range))
-    
-    # Note: This doesn't copy conditional formatting, data validation, etc.
-    # If needed, use source_wb.copy_worksheet(tab1_ws) as before, but that requires applying formats first.
+        # Get the source cell from tab1 (column A)
+        source_cell = tab1_ws.cell(row=row_idx, column=1)
+        # Get the target cell from new worksheet (column A)
+        target_cell = new_ws.cell(row=row_idx, column=1)
+        
+        # Copy all formatting from tab1 column A to new worksheet column A
+        if source_cell.has_style:
+            target_cell.font = copy(source_cell.font)
+            target_cell.border = copy(source_cell.border)
+            target_cell.fill = copy(source_cell.fill)
+            target_cell.number_format = source_cell.number_format
+            target_cell.protection = copy(source_cell.protection)
+            target_cell.alignment = copy(source_cell.alignment)
     
     return new_ws
 
