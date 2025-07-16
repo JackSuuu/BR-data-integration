@@ -62,43 +62,39 @@ def extract_date_from_sheet(client_ws):
     return date_value
 
 def copy_tab1_format_with_client_data(source_wb, tab1_ws, client_ws, new_tab_name):
-    """Create a new tab with tab1 format but client data"""
-    # Create new worksheet
-    new_ws = source_wb.create_sheet(title=new_tab_name)
+    """Create a new tab by duplicating tab1 (including all formats) and overwriting with client data"""
+    # Duplicate the tab1 sheet to copy all formats, including conditional formatting, data validation, etc.
+    new_ws = source_wb.copy_worksheet(tab1_ws)
+    new_ws.title = new_tab_name
     
-    # First, copy all formatting from tab1
-    for row in tab1_ws.iter_rows():
-        for cell in row:
-            new_cell = new_ws.cell(row=cell.row, column=cell.column)
-            
-            # Copy all formatting
-            if cell.has_style:
-                new_cell.font = copy(cell.font)
-                new_cell.border = copy(cell.border)
-                new_cell.fill = copy(cell.fill)
-                new_cell.number_format = cell.number_format
-                new_cell.protection = copy(cell.protection)
-                new_cell.alignment = copy(cell.alignment)
+    # Optionally clear existing values in the new sheet (if tab1 has placeholder data)
+    # Uncomment if needed:
+    # for row in new_ws.iter_rows():
+    #     for cell in row:
+    #         cell.value = None
     
-    # Copy column dimensions
-    for col in tab1_ws.column_dimensions:
-        new_ws.column_dimensions[col].width = tab1_ws.column_dimensions[col].width
+    # Now overwrite with client data (values only, preserving template formats)
+    # Determine the max row/col from client to ensure we cover the full data range
+    max_row = max(client_ws.max_row, tab1_ws.max_row)
+    max_col = max(client_ws.max_column, tab1_ws.max_column)
     
-    # Copy row dimensions
-    for row in tab1_ws.row_dimensions:
-        new_ws.row_dimensions[row].height = tab1_ws.row_dimensions[row].height
+    for row_idx in range(1, max_row + 1):
+        for col_idx in range(1, max_col + 1):
+            client_cell = client_ws.cell(row=row_idx, column=col_idx)
+            if client_cell.value is not None:  # Only overwrite non-empty cells
+                target_cell = new_ws.cell(row=row_idx, column=col_idx)
+                target_cell.value = client_cell.value
+                # Do not copy any styles from client_cell; keep template's styles intact
     
-    # Copy merged cells
-    for merged_cell_range in tab1_ws.merged_cells.ranges:
-        new_ws.merge_cells(str(merged_cell_range))
+    # If client data extends beyond template, apply basic template column/row dimensions to new areas
+    for col in range(1, max_col + 1):
+        col_letter = get_column_letter(col)
+        if col_letter in tab1_ws.column_dimensions:
+            new_ws.column_dimensions[col_letter].width = tab1_ws.column_dimensions[col_letter].width
     
-    # Now copy client data into the formatted cells
-    for row in client_ws.iter_rows():
-        for cell in row:
-            if cell.value is not None:  # Only copy non-empty cells
-                target_cell = new_ws.cell(row=cell.row, column=cell.column)
-                target_cell.value = cell.value
-                # The formatting is already set above, so we just set the value
+    for row in range(1, max_row + 1):
+        if row in tab1_ws.row_dimensions:
+            new_ws.row_dimensions[row].height = tab1_ws.row_dimensions[row].height
     
     return new_ws
 
@@ -206,8 +202,9 @@ def create_summary_for_client(client_name, client_files_list):
         print(f"    Processing file: {os.path.basename(filepath)}")
         
         try:
-            # Load the client workbook
-            client_wb = load_workbook(filepath)
+            # Load the client workbook with calculated values
+            print(f"      Loading workbook with calculated values...")
+            client_wb = load_workbook(filepath, data_only=True)
             
             # Get the first worksheet from the client file
             client_ws = client_wb.active
